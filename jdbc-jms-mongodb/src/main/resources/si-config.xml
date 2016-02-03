@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:int="http://www.springframework.org/schema/integration"
+       xmlns:int-jms="http://www.springframework.org/schema/integration/jms"
+       xmlns:int-jdbc="http://www.springframework.org/schema/integration/jdbc"
+       xmlns:int-mongodb="http://www.springframework.org/schema/integration/mongodb"
+       xsi:schemaLocation="http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration-4.2.xsd
+		http://www.springframework.org/schema/integration/jms http://www.springframework.org/schema/integration/jms/spring-integration-jms-4.2.xsd
+		http://www.springframework.org/schema/integration/jdbc http://www.springframework.org/schema/integration/jdbc/spring-integration-jdbc-4.2.xsd
+		http://www.springframework.org/schema/integration/mongodb http://www.springframework.org/schema/integration/mongodb/spring-integration-mongodb-4.2.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!--********************************************************************************************-->
+    <!-- INFRASTRUCTURE -->
+    <!--********************************************************************************************-->
+
+    <bean id="connectionFactory" class="org.springframework.jms.connection.CachingConnectionFactory">
+        <property name="targetConnectionFactory">
+            <bean class="org.apache.activemq.ActiveMQConnectionFactory">
+                <property name="brokerURL" value="tcp://localhost:61616"/>
+            </bean>
+        </property>
+    </bean>
+
+    <!--********************************************************************************************-->
+    <!-- MAPPERS -->
+    <!--********************************************************************************************-->
+
+    <bean id="messageRowMapper" class="pl.dstrzyzewski.presentation.spring.integration.MessageRowMapper"/>
+
+    <bean id="customConversions" class="org.springframework.data.mongodb.core.convert.CustomConversions">
+        <constructor-arg>
+            <list>
+                <bean class="pl.dstrzyzewski.presentation.spring.integration.MongoDBMessageConverter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+
+    <bean id="customMongoConverter" class="org.springframework.data.mongodb.core.convert.MappingMongoConverter">
+        <constructor-arg ref="mongoDbFactory"/>
+        <constructor-arg>
+            <bean class="org.springframework.data.mongodb.core.mapping.MongoMappingContext"/>
+        </constructor-arg>
+        <property name="customConversions" ref="customConversions"/>
+    </bean>
+
+    <!--********************************************************************************************-->
+    <!-- SI FLOW -->
+    <!--********************************************************************************************-->
+
+    <!-- JDBC -->
+    <int-jdbc:inbound-channel-adapter query="select * from messages where processed = 0"
+                                      channel="jdbcMessages"
+                                      update="update messages set processed=1 where id in (:id)"
+                                      data-source="dataSource" row-mapper="messageRowMapper">
+        <int:poller fixed-rate="1000"/>
+    </int-jdbc:inbound-channel-adapter>
+
+    <int-jms:channel id="jdbcMessages" queue-name="jdbcMessages"/>
+
+
+    <!-- SPLITTING -->
+    <int:splitter input-channel="jdbcMessages" output-channel="splitMessages">
+        <bean class="org.springframework.integration.splitter.DefaultMessageSplitter"/>
+    </int:splitter>
+
+    <int:channel id="splitMessages" datatype="pl.dstrzyzewski.presentation.spring.integration.Message">
+        <int:interceptors>
+            <int:wire-tap channel="loggingChannel"/>
+        </int:interceptors>
+    </int:channel>
+
+    <!-- FILTERING -->
+    <int:filter input-channel="splitMessages" output-channel="filteredMessages" expression="payload.id > 2"/>
+
+    <int:channel id="filteredMessages" datatype="pl.dstrzyzewski.presentation.spring.integration.Message"/>
+
+    <!-- MONGODB -->
+    <int-mongodb:outbound-channel-adapter channel="filteredMessages"
+                                          collection-name="messages"
+                                          mongo-converter="customMongoConverter"/>
+
+    <!-- LOGGING -->
+    <int:channel id="loggingChannel"/>
+    <int:logging-channel-adapter channel="loggingChannel" level="INFO" log-full-message="true"/>
+
+</beans>

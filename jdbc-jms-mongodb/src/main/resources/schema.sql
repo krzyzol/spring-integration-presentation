@@ -1,0 +1,1 @@
+create table messages (id int, text varchar, processed int);

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:int="http://www.springframework.org/schema/integration"
+       xmlns:int-stream="http://www.springframework.org/schema/integration/stream"
+       xmlns:task="http://www.springframework.org/schema/task"
+       xsi:schemaLocation="http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration-4.2.xsd
+		http://www.springframework.org/schema/integration/stream http://www.springframework.org/schema/integration/stream/spring-integration-stream-4.2.xsd
+		http://www.springframework.org/schema/task  http://www.springframework.org/schema/task/spring-task-4.2.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <int-stream:stdin-channel-adapter channel="data">
+        <int:poller fixed-rate="200"/>
+    </int-stream:stdin-channel-adapter>
+
+    <task:executor id="taskExecutor" pool-size="5"/>
+
+
+    <int:publish-subscribe-channel id="data"/>
+    <!-- replace the definition above to run listeners using different threads -->
+    <!--<int:publish-subscribe-channel id="data" task-executor="taskExecutor"/>-->
+
+
+    <bean id="threadNameService" class="pl.dstrzyzewski.presentation.spring.integration.ThreadNameService"/>
+
+    <int:service-activator input-channel="data" ref="threadNameService" method="write"/>
+    <int:service-activator input-channel="data" ref="threadNameService" method="write"/>
+
+</beans>
